@@ -1,0 +1,53 @@
+当前目录: D:\XT\项目\FarmAura 
+======================================== 
+ 
++---FarmAura\ 
+    +---.editorconfig 
+    +---.gitignore 
+    +---build.gradle.kts 
+    +---FarmAura.iml 
+    +---gradle.properties 
+    +---gradlew 
+    +---gradlew.bat 
+    +---LICENSE 
+    +---README.md 
+    +---settings.gradle.kts 
+    +---目录树_详细.txt 
++---.github\ 
++---workflows\ 
+    +---dev_build.yml 
+    +---pull_request.yml 
++---.idea\ 
+    +---.gitignore 
+    +---misc.xml 
+    +---modules.xml 
+    +---vcs.xml 
+    +---workspace.xml 
++---libraries\ 
+    +---gradle_wrapper.xml 
++---gradle\ 
+    +---libs.versions.toml 
++---wrapper\ 
+    +---gradle-wrapper.jar 
+    +---gradle-wrapper.properties 
++---src\ 
++---main\ 
++---java\ 
++---com\ 
++---example\ 
++---addon\ 
+    +---AddonTemplate.java 
++---commands\ 
+    +---CommandExample.java 
++---hud\ 
+    +---HudExample.java 
++---mixin\ 
+    +---ExampleMixin.java 
++---modules\ 
+    +---ModuleExample.java 
++---resources\ 
+    +---addon-template.mixins.json 
+    +---fabric.mod.json 
++---assets\ 
++---template\ 
+    +---icon.png 
