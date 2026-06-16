@@ -1,16 +1,16 @@
 pluginManagement {
     repositories {
+        mavenCentral()
+        gradlePluginPortal()
         maven {
             name = "Fabric"
             url = uri("https://maven.fabricmc.net/")
         }
-        mavenCentral()
-        gradlePluginPortal()
+        maven {
+            name = "Meteor Development"
+            url = uri("https://maven.meteordev.org/releases")
+        }
     }
 }
 
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
-}
-
-rootProject.name = "addon-template"
+rootProject.name = "meteor-farm-addon"

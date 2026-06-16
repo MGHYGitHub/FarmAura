@@ -1,76 +1,91 @@
 plugins {
-    alias(libs.plugins.fabric.loom)
+    id("fabric-loom") version "1.6.12"
+    id("maven-publish")
 }
 
+version = project.properties["version"] as String
+group = project.properties["maven_group"] as String
+
 base {
-    archivesName = properties["archives_base_name"] as String
-    version = libs.versions.mod.version.get()
-    group = properties["maven_group"] as String
+    archivesName.set(project.properties["archives_base_name"] as String)
 }
 
 repositories {
+    mavenCentral()
     maven {
-        name = "meteor-maven"
+        name = "Meteor Development"
         url = uri("https://maven.meteordev.org/releases")
     }
     maven {
-        name = "meteor-maven-snapshots"
-        url = uri("https://maven.meteordev.org/snapshots")
+        name = "Fabric"
+        url = uri("https://maven.fabricmc.net/")
+    }
+    maven {
+        name = "Oss Sonatype"
+        url = uri("https://oss.sonatype.org/content/repositories/snapshots/")
+    }
+    // 添加 Baritone 仓库
+    maven {
+        name = "Baritone"
+        url = uri("https://maven.cabaletta.tech/releases")
     }
 }
 
 dependencies {
-    // Fabric
-    minecraft(libs.minecraft)
-    implementation(libs.fabric.loader)
+    // Fabric 基础依赖保持不变
+    minecraft("com.mojang:minecraft:${project.properties["minecraft_version"]}")
+    mappings("net.fabricmc:yarn:${project.properties["minecraft_version"]}+build.1:v2")
+    modImplementation("net.fabricmc:fabric-loader:${project.properties["loader_version"]}")
 
-    // Meteor
-    implementation(libs.meteor.client)
-}
+    // 注释掉所有网络依赖
+    // modImplementation("baritone:baritone-api-fabric:1.20.1-SNAPSHOT") {
+    //     exclude(group = "net.fabricmc.fabric-api")
+    // }
+    // modImplementation("meteordevelopment:meteor-client:${project.properties["meteor_version"]}") {
+    //     exclude(group = "net.fabricmc.fabric-api")
+    // }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(libs.versions.jdk.get().toInt()))
-    }
-}
-
-fun toMinecraftCompat(version: String): String {
-    val match = Regex("""^(\d{2})\.([1-9]\d*)(?:\.([1-9]\d*))?$""")
-        .matchEntire(version)
-        ?: error("Invalid Minecraft version format: $version. Expected YY.D or YY.D.H")
-
-    val (year, drop, _) = match.destructured
-    return "~$year.$drop"
+    // 使用本地 JAR 文件
+    modImplementation(files("libs/meteor-client-0.5.4-1.20.1.jar"))
 }
 
 tasks {
     processResources {
-        val propertyMap = mapOf(
-            "version" to project.version,
-            "minecraft_version" to toMinecraftCompat(libs.versions.minecraft.get()),
-            "jdk_version" to libs.versions.jdk.get(),
-        )
+        inputs.property("version", project.version)
+        inputs.property("id", rootProject.name)
+        inputs.property("name", "Range Farm Assistant")
+        inputs.property("description", "自动范围锄地、种植和除草 - Meteor Client 插件")
 
-        inputs.properties(propertyMap)
         filesMatching("fabric.mod.json") {
-            expand(propertyMap)
+            expand(
+                "version" to project.version,
+                "id" to rootProject.name,
+                "name" to "Range Farm Assistant",
+                "description" to "自动范围锄地、种植和除草 - Meteor Client 插件"
+            )
         }
     }
 
     jar {
-        inputs.property("archivesName", project.base.archivesName.get())
-
         from("LICENSE") {
-            rename { "${it}_${inputs.properties["archivesName"]}" }
+            rename { "${it}_${base.archivesName.get()}" }
         }
     }
 
-    withType<JavaCompile>().configureEach {
-        options.compilerArgs.addAll(
-            listOf(
-                "-Xlint:deprecation",
-                "-Xlint:unchecked"
-            )
-        )
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = project.group.toString()
+            artifactId = base.archivesName.get()
+            version = project.version.toString()
+            // 使用 getByName 修复语法错误
+            from(components.getByName("java"))
+        }
     }
 }
