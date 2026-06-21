@@ -1,0 +1,52 @@
+# 工作流名称
+name: Build FarmAura Mod
+
+# 触发条件：当代码被推送到 main 分支时触发
+on:
+  push:
+    branches: [ "main" ]
+  # 也可以配置在拉取请求时触发
+  # pull_request:
+  #   branches: [ "main" ]
+
+# 定义要执行的任务（Jobs）
+jobs:
+  # 任务的 ID，可以自定义
+  build:
+    # 指定运行环境为最新的 Ubuntu
+    runs-on: ubuntu-latest
+
+    # 任务的具体步骤
+    steps:
+      # 1. 检出你的仓库代码
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. 设置 Java 环境（关键步骤！）
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          # 使用 Temurin（Eclipse Adoptium）的 Java 17 发行版
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. 为 gradlew 脚本添加执行权限（Linux/macOS 环境需要）
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # 4. 使用 Gradle 执行构建
+      - name: Build with Gradle
+        # 使用 GitHub 官方提供的 gradle/actions 来简化 Gradle 构建
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          # 执行构建任务
+          arguments: build
+
+      # 5. （可选）上传构建产物
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # 产物的名称
+          name: farm-aura-mod-jar
+          # 要上传的文件路径，这里指向 Gradle 构建生成的 jar 文件
+          path: build/libs/*.jar
