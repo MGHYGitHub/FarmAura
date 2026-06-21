@@ -1,0 +1,37 @@
+{
+  "meteor-client.category.combat": "Combat",
+  "meteor-client.module.farmaura": "Farm Aura",
+  "meteor-client.module.farmaura.description": "Range hoe, planting and weeding",
+
+  "meteor-client.setting.farmaura.range": "Range",
+  "meteor-client.setting.farmaura.range.description": "Working radius (centered on player)",
+
+  "meteor-client.setting.farmaura.delay": "Delay",
+  "meteor-client.setting.farmaura.delay.description": "Delay between each action (ms), lower = faster",
+
+  "meteor-client.setting.farmaura.loop-mode": "Loop Mode",
+  "meteor-client.setting.farmaura.loop-mode.description": "Continue looping (off = stop after one run)",
+
+  "meteor-client.setting.farmaura.hoe-enabled": "Hoe Enabled",
+  "meteor-client.setting.farmaura.hoe-enabled.description": "Range hoe tillable blocks",
+
+  "meteor-client.setting.farmaura.plant-enabled": "Plant Enabled",
+  "meteor-client.setting.farmaura.plant-enabled.description": "Range plant on farmland",
+
+  "meteor-client.setting.farmaura.crop-type": "Crop Type",
+  "meteor-client.setting.farmaura.crop-type.description": "Type of crop to plant",
+
+  "meteor-client.setting.farmaura.weed-enabled": "Weed Enabled",
+  "meteor-client.setting.farmaura.weed-enabled.description": "Range remove weeds (grass, flowers, etc.)",
+
+  "meteor-client.setting.farmaura.chat-feedback": "Chat Feedback",
+  "meteor-client.setting.farmaura.chat-feedback.description": "Show operation feedback in chat",
+
+  "meteor-client.crop-type.wheat": "Wheat",
+  "meteor-client.crop-type.carrot": "Carrot",
+  "meteor-client.crop-type.potato": "Potato",
+  "meteor-client.crop-type.beetroot": "Beetroot",
+  "meteor-client.crop-type.melon": "Melon",
+  "meteor-client.crop-type.pumpkin": "Pumpkin",
+  "meteor-client.crop-type.netherwart": "Nether Wart"
+}

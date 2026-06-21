@@ -4,11 +4,11 @@
   "version": "${version}",
   "name": "Range Farm Assistant",
   "description": "自动范围锄地、种植和除草 - Meteor Client 插件",
-  "authors": ["Your Name"],
+  "authors": ["Miao"],
   "contact": {
-    "homepage": "https://github.com/yourusername/farm-addon",
-    "issues": "https://github.com/yourusername/farm-addon/issues",
-    "sources": "https://github.com/yourusername/farm-addon"
+    "homepage": "https://github.com/MGHYGitHub/farm-addon",
+    "issues": "https://github.com/MGHYGitHub/farm-addon/issues",
+    "sources": "https://github.com/MGHYGitHub/farm-addon"
   },
   "license": "MIT",
   "icon": "assets/template/icon.png",

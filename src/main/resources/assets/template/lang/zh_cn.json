@@ -1,0 +1,37 @@
+{
+  "meteor-client.category.combat": "战斗",
+  "meteor-client.module.farmaura": "自动农场",
+  "meteor-client.module.farmaura.description": "范围锄地、种植、除草",
+
+  "meteor-client.setting.farmaura.range": "工作半径",
+  "meteor-client.setting.farmaura.range.description": "以玩家为中心的工作半径",
+
+  "meteor-client.setting.farmaura.delay": "操作延迟",
+  "meteor-client.setting.farmaura.delay.description": "每次操作的延迟（毫秒），越小越快",
+
+  "meteor-client.setting.farmaura.loop-mode": "循环模式",
+  "meteor-client.setting.farmaura.loop-mode.description": "持续循环执行（关闭则执行一次后自动停止）",
+
+  "meteor-client.setting.farmaura.hoe-enabled": "启用锄地",
+  "meteor-client.setting.farmaura.hoe-enabled.description": "自动锄地",
+
+  "meteor-client.setting.farmaura.plant-enabled": "启用种植",
+  "meteor-client.setting.farmaura.plant-enabled.description": "自动种植",
+
+  "meteor-client.setting.farmaura.crop-type": "作物类型",
+  "meteor-client.setting.farmaura.crop-type.description": "要种植的作物类型",
+
+  "meteor-client.setting.farmaura.weed-enabled": "启用除草",
+  "meteor-client.setting.farmaura.weed-enabled.description": "自动清除杂草（草、花等）",
+
+  "meteor-client.setting.farmaura.chat-feedback": "聊天反馈",
+  "meteor-client.setting.farmaura.chat-feedback.description": "在聊天栏显示操作反馈",
+
+  "meteor-client.crop-type.wheat": "小麦",
+  "meteor-client.crop-type.carrot": "胡萝卜",
+  "meteor-client.crop-type.potato": "马铃薯",
+  "meteor-client.crop-type.beetroot": "甜菜根",
+  "meteor-client.crop-type.melon": "西瓜",
+  "meteor-client.crop-type.pumpkin": "南瓜",
+  "meteor-client.crop-type.netherwart": "地狱疣"
+}

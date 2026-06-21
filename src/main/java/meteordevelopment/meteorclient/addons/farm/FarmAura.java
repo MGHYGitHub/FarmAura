@@ -9,15 +9,12 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
-import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.*;
 import net.minecraft.item.HoeItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -25,28 +22,39 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 public class FarmAura extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgHoe = settings.createGroup("Hoe");
-    private final SettingGroup sgPlant = settings.createGroup("Plant");
-    private final SettingGroup sgWeed = settings.createGroup("Weed");
+    private final SettingGroup sgHoe = settings.createGroup("锄地");
+    private final SettingGroup sgPlant = settings.createGroup("种植");
+    private final SettingGroup sgWeed = settings.createGroup("除草");
+    private final SettingGroup sgDebug = settings.createGroup("调试");
 
     // ==================== General Settings ====================
 
     private final Setting<Integer> range = sgGeneral.add(new IntSetting.Builder()
-        .name("range")
-        .description("Working radius (centered on player).")
-        .defaultValue(5)
+        .name("工作半径")
+        .description("以玩家为中心的水平工作半径")
+        .defaultValue(4)
         .min(1)
-        .sliderMax(15)
+        .sliderMax(6)
         .build()
     );
 
-    private final Setting<Boolean> instant = sgGeneral.add(new BoolSetting.Builder()
-        .name("instant")
-        .description("Instant range operation (bypasses delay).")
+    private final Setting<Integer> delay = sgGeneral.add(new IntSetting.Builder()
+        .name("操作延迟")
+        .description("每次操作的延迟（毫秒），越小越快")
+        .defaultValue(80)
+        .min(20)
+        .sliderMax(300)
+        .build()
+    );
+
+    private final Setting<Boolean> loopMode = sgGeneral.add(new BoolSetting.Builder()
+        .name("循环模式")
+        .description("持续循环执行（关闭则执行一次后自动停止）")
         .defaultValue(true)
         .build()
     );
@@ -54,41 +62,25 @@ public class FarmAura extends Module {
     // ==================== Hoe Settings ====================
 
     private final Setting<Boolean> hoeEnabled = sgHoe.add(new BoolSetting.Builder()
-        .name("hoe-enabled")
-        .description("Range hoe all tillable blocks.")
+        .name("启用锄地")
+        .description("自动锄地")
         .defaultValue(true)
-        .build()
-    );
-
-    private final Setting<Boolean> hoeRequireTool = sgHoe.add(new BoolSetting.Builder()
-        .name("hoe-require-tool")
-        .description("Require a hoe in hotbar.")
-        .defaultValue(true)
-        .visible(hoeEnabled::get)
         .build()
     );
 
     // ==================== Plant Settings ====================
 
     private final Setting<Boolean> plantEnabled = sgPlant.add(new BoolSetting.Builder()
-        .name("plant-enabled")
-        .description("Range plant on all farmland.")
+        .name("启用种植")
+        .description("自动种植")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<CropType> cropType = sgPlant.add(new EnumSetting.Builder<CropType>()
-        .name("crop-type")
-        .description("Type of crop to plant.")
+        .name("作物类型")
+        .description("要种植的作物类型")
         .defaultValue(CropType.Wheat)
-        .visible(plantEnabled::get)
-        .build()
-    );
-
-    private final Setting<Boolean> plantRequireSeed = sgPlant.add(new BoolSetting.Builder()
-        .name("plant-require-seed")
-        .description("Require seeds in hotbar.")
-        .defaultValue(true)
         .visible(plantEnabled::get)
         .build()
     );
@@ -96,144 +88,153 @@ public class FarmAura extends Module {
     // ==================== Weed Settings ====================
 
     private final Setting<Boolean> weedEnabled = sgWeed.add(new BoolSetting.Builder()
-        .name("weed-enabled")
-        .description("Range remove all weeds (grass, flowers, etc.).")
+        .name("启用除草")
+        .description("自动清除杂草（花、高草丛等）")
         .defaultValue(true)
         .build()
     );
 
-    private int timer;
-    private boolean hasHoed;
-    private boolean hasPlanted;
-    private boolean hasWeeded;
+    // ==================== Debug Settings ====================
+
+    private final Setting<Boolean> chatFeedback = sgDebug.add(new BoolSetting.Builder()
+        .name("聊天反馈")
+        .description("在聊天栏显示操作反馈")
+        .defaultValue(false)
+        .build()
+    );
+
+    // ==================== 运行状态 ====================
+
+    private enum Phase {
+        IDLE, WEEDING, HOEING, PLANTING, DONE
+    }
+
+    private Phase phase = Phase.IDLE;
+    private List<BlockPos> weedTargets = new ArrayList<>();
+    private List<BlockPos> hoeTargets = new ArrayList<>();
+    private List<BlockPos> plantTargets = new ArrayList<>();
+    private int currentIndex = 0;
+    private long lastActionTime = 0;
+    private boolean isProcessing = false;
 
     public FarmAura() {
-        super(Categories.Combat, "FarmAura", "Range hoe, planting and weeding.");
+        super(Categories.Combat, "自动农场", "范围锄地、种植、除草");
     }
 
     @Override
     public void onActivate() {
-        timer = 0;
-        hasHoed = false;
-        hasPlanted = false;
-        hasWeeded = false;
+        resetState();
+        if (chatFeedback.get()) info("自动农场已启动");
+    }
+
+    @Override
+    public void onDeactivate() {
+        resetState();
+        if (chatFeedback.get()) info("自动农场已关闭");
+    }
+
+    private void resetState() {
+        phase = Phase.IDLE;
+        weedTargets.clear();
+        hoeTargets.clear();
+        plantTargets.clear();
+        currentIndex = 0;
+        lastActionTime = 0;
+        isProcessing = false;
     }
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
         if (mc.player == null || mc.world == null) return;
+        if (isProcessing) return;
 
-        timer++;
-        if (!instant.get() && timer < 2) return;
-        timer = 0;
-
-        if (weedEnabled.get() && !hasWeeded) {
-            performRangeWeed();
-            hasWeeded = true;
-        }
-
-        if (hoeEnabled.get() && !hasHoed) {
-            performRangeHoe();
-            hasHoed = true;
-        }
-
-        if (plantEnabled.get() && !hasPlanted) {
-            performRangePlant();
-            hasPlanted = true;
-        }
-
-        if (hasHoed && hasPlanted && hasWeeded) {
-            toggle();
-        }
-    }
-
-    // ==================== Range Hoe ====================
-
-    private void performRangeHoe() {
-        if (hoeRequireTool.get() && !hasHoe()) {
-            warning("No hoe in hotbar!");
+        if (phase == Phase.IDLE) {
+            scanTargets();
+            if (weedTargets.isEmpty() && hoeTargets.isEmpty() && plantTargets.isEmpty()) {
+                if (chatFeedback.get()) info("没有找到目标方块");
+                if (!loopMode.get()) toggle();
+                return;
+            }
+            if (!weedTargets.isEmpty()) {
+                phase = Phase.WEEDING;
+                if (chatFeedback.get()) info("开始除草: " + weedTargets.size() + " 个");
+            } else if (!hoeTargets.isEmpty()) {
+                phase = Phase.HOEING;
+                if (chatFeedback.get()) info("开始锄地: " + hoeTargets.size() + " 个");
+            } else if (!plantTargets.isEmpty()) {
+                phase = Phase.PLANTING;
+                if (chatFeedback.get()) info("开始种植: " + plantTargets.size() + " 个");
+            }
+            currentIndex = 0;
             return;
         }
 
-        int hoeSlot = -1;
-        if (hoeRequireTool.get()) {
-            hoeSlot = InvUtils.findInHotbar(itemStack -> itemStack.getItem() instanceof HoeItem).slot();
-            if (hoeSlot == -1) return;
-        }
+        long now = System.currentTimeMillis();
+        if (now - lastActionTime < delay.get()) return;
 
-        List<BlockPos> targets = new ArrayList<>();
+        isProcessing = true;
+        boolean moreWork = executeCurrentPhase();
+        isProcessing = false;
+
+        if (!moreWork) {
+            advancePhase();
+        }
+    }
+
+    // ==================== 扫描目标 ====================
+
+    private void scanTargets() {
+        weedTargets.clear();
+        hoeTargets.clear();
+        plantTargets.clear();
+
         BlockPos center = mc.player.getBlockPos();
         int r = range.get();
 
+        // 获取玩家视线高度（眼睛位置）
+        double eyeY = mc.player.getEyeY();
+
         for (int x = -r; x <= r; x++) {
             for (int z = -r; z <= r; z++) {
-                for (int y = -1; y <= 1; y++) {
+                // 只扫描表面方块（从玩家脚下 -1 到 +2 的高度范围）
+                // 这样就不会扫描到地下深处的方块
+                for (int y = -1; y <= 2; y++) {
                     BlockPos pos = center.add(x, y, z);
-                    if (mc.player.getBlockPos().getSquaredDistance(pos) <= r * r) {
-                        BlockState state = mc.world.getBlockState(pos);
-                        if (isHoable(state.getBlock()) && !(state.getBlock() instanceof FarmlandBlock)) {
-                            targets.add(pos);
+
+                    // 检查水平距离（只计算 XZ 平面的距离，忽略 Y）
+                    double dx = pos.getX() - center.getX() + 0.5;
+                    double dz = pos.getZ() - center.getZ() + 0.5;
+                    double horizontalDist = Math.sqrt(dx * dx + dz * dz);
+                    if (horizontalDist > r) continue;
+
+                    // 检查玩家是否能够到（交互距离）
+                    if (!canReach(pos)) continue;
+
+                    BlockState state = mc.world.getBlockState(pos);
+                    Block block = state.getBlock();
+
+                    // 1. 杂草（花、高草丛等）
+                    if (weedEnabled.get() && isWeedBlock(block)) {
+                        weedTargets.add(pos);
+                    }
+                    // 2. 可耕地（表面方块）
+                    else if (hoeEnabled.get() && isHoable(block) && !(block instanceof FarmlandBlock)) {
+                        // 检查上方是否是空气（确保是表面）
+                        BlockPos abovePos = pos.up();
+                        BlockState aboveState = mc.world.getBlockState(abovePos);
+                        boolean isSurface = aboveState.isAir() || aboveState.isReplaceable();
+                        if (isSurface) {
+                            hoeTargets.add(pos);
                         }
                     }
-                }
-            }
-        }
-
-        if (targets.isEmpty()) {
-            info("No tillable blocks found.");
-            return;
-        }
-
-        info("Hoing " + targets.size() + " blocks...");
-
-        int oldSlot = mc.player.getInventory().selectedSlot;
-        if (hoeRequireTool.get() && hoeSlot != -1 && hoeSlot != oldSlot) {
-            mc.player.getInventory().selectedSlot = hoeSlot;
-            mc.player.networkHandler.sendPacket(new UpdateSelectedSlotC2SPacket(hoeSlot));
-        }
-
-        // 修复：使用正确的构造函数（3个参数）
-        for (BlockPos pos : targets) {
-            Vec3d hitVec = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-            BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, pos, true);
-            mc.player.networkHandler.sendPacket(new PlayerInteractBlockC2SPacket(Hand.MAIN_HAND, hitResult, 0));
-        }
-
-        if (oldSlot != mc.player.getInventory().selectedSlot) {
-            mc.player.getInventory().selectedSlot = oldSlot;
-            mc.player.networkHandler.sendPacket(new UpdateSelectedSlotC2SPacket(oldSlot));
-        }
-
-        info("Hoed " + targets.size() + " blocks.");
-    }
-
-    // ==================== Range Plant ====================
-
-    private void performRangePlant() {
-        int seedSlot = InvUtils.findInHotbar(itemStack ->
-            isSeedItem(itemStack.getItem(), cropType.get())
-        ).slot();
-
-        if (plantRequireSeed.get() && seedSlot == -1) {
-            warning("No seeds in hotbar!");
-            return;
-        }
-
-        List<BlockPos> targets = new ArrayList<>();
-        BlockPos center = mc.player.getBlockPos();
-        int r = range.get();
-
-        for (int x = -r; x <= r; x++) {
-            for (int z = -r; z <= r; z++) {
-                for (int y = -1; y <= 1; y++) {
-                    BlockPos pos = center.add(x, y, z);
-                    if (mc.player.getBlockPos().getSquaredDistance(pos) <= r * r) {
-                        BlockState state = mc.world.getBlockState(pos);
-                        if (state.getBlock() instanceof FarmlandBlock) {
-                            BlockPos abovePos = pos.up();
-                            BlockState aboveState = mc.world.getBlockState(abovePos);
-                            if (aboveState.isAir() || aboveState.isReplaceable()) {
-                                targets.add(abovePos);
+                    // 3. 耕地（需要种植）
+                    else if (plantEnabled.get() && block instanceof FarmlandBlock) {
+                        BlockPos abovePos = pos.up();
+                        BlockState aboveState = mc.world.getBlockState(abovePos);
+                        if (aboveState.isAir() || aboveState.isReplaceable()) {
+                            // 检查是否能到达上方位置（种植位置）
+                            if (canReach(abovePos)) {
+                                plantTargets.add(abovePos);
                             }
                         }
                     }
@@ -241,103 +242,201 @@ public class FarmAura extends Module {
             }
         }
 
-        if (targets.isEmpty()) {
-            info("No plantable spots found.");
-            return;
-        }
-
-        info("Planting " + targets.size() + " spots...");
-
-        int oldSlot = mc.player.getInventory().selectedSlot;
-        if (seedSlot != -1 && seedSlot != oldSlot) {
-            mc.player.getInventory().selectedSlot = seedSlot;
-            mc.player.networkHandler.sendPacket(new UpdateSelectedSlotC2SPacket(seedSlot));
-        }
-
-        // 修复：使用正确的构造函数（3个参数）
-        for (BlockPos pos : targets) {
-            Vec3d hitVec = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-            BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, pos, true);
-            mc.player.networkHandler.sendPacket(new PlayerInteractBlockC2SPacket(Hand.MAIN_HAND, hitResult, 0));
-        }
-
-        if (oldSlot != mc.player.getInventory().selectedSlot) {
-            mc.player.getInventory().selectedSlot = oldSlot;
-            mc.player.networkHandler.sendPacket(new UpdateSelectedSlotC2SPacket(oldSlot));
-        }
-
-        info("Planted " + targets.size() + " crops.");
+        // 按距离排序（从近到远）
+        weedTargets.sort(Comparator.comparingDouble(pos -> pos.getSquaredDistance(center)));
+        hoeTargets.sort(Comparator.comparingDouble(pos -> pos.getSquaredDistance(center)));
+        plantTargets.sort(Comparator.comparingDouble(pos -> pos.getSquaredDistance(center)));
     }
 
-    // ==================== Range Weed ====================
+    // ==================== 判断是否能到达 ====================
 
-    private void performRangeWeed() {
-        List<BlockPos> targets = new ArrayList<>();
-        BlockPos center = mc.player.getBlockPos();
-        int r = range.get();
+    private boolean canReach(BlockPos pos) {
+        if (mc.player == null) return false;
 
-        for (int x = -r; x <= r; x++) {
-            for (int z = -r; z <= r; z++) {
-                for (int y = -1; y <= 1; y++) {
-                    BlockPos pos = center.add(x, y, z);
-                    if (mc.player.getBlockPos().getSquaredDistance(pos) <= r * r) {
-                        BlockState state = mc.world.getBlockState(pos);
-                        if (isWeedBlock(state.getBlock())) {
-                            targets.add(pos);
-                        }
-                    }
-                }
+        // 获取玩家眼睛位置
+        Vec3d eyePos = mc.player.getEyePos();
+        // 获取方块中心位置
+        Vec3d blockCenter = pos.toCenterPos();
+
+        // 计算距离
+        double distance = eyePos.distanceTo(blockCenter);
+
+        // Minecraft 默认交互距离是 4.5 格，我们稍微放宽一点到 5 格
+        // 但考虑到方块本身的大小，实际可交互距离会稍大
+        return distance <= 5.0;
+    }
+
+    // ==================== 执行当前阶段 ====================
+
+    private boolean executeCurrentPhase() {
+        List<BlockPos> currentTargets = getCurrentTargets();
+        if (currentTargets == null || currentIndex >= currentTargets.size()) {
+            return false;
+        }
+
+        BlockPos pos = currentTargets.get(currentIndex);
+
+        // 执行前再次检查是否能到达
+        if (!canReach(pos)) {
+            currentIndex++;
+            return currentIndex < currentTargets.size();
+        }
+
+        boolean success = false;
+
+        switch (phase) {
+            case WEEDING -> success = performWeed(pos);
+            case HOEING -> success = performHoe(pos);
+            case PLANTING -> success = performPlant(pos, pos.down());
+            default -> {}
+        }
+
+        if (success) {
+            currentIndex++;
+            lastActionTime = System.currentTimeMillis();
+        } else {
+            currentIndex++;
+        }
+
+        return currentIndex < currentTargets.size();
+    }
+
+    private List<BlockPos> getCurrentTargets() {
+        return switch (phase) {
+            case WEEDING -> weedTargets;
+            case HOEING -> hoeTargets;
+            case PLANTING -> plantTargets;
+            default -> null;
+        };
+    }
+
+    // ==================== 阶段切换 ====================
+
+    private void advancePhase() {
+        if (phase == Phase.WEEDING) {
+            if (!hoeTargets.isEmpty()) {
+                phase = Phase.HOEING;
+                currentIndex = 0;
+                if (chatFeedback.get()) info("开始锄地: " + hoeTargets.size() + " 个");
+                return;
+            } else if (!plantTargets.isEmpty()) {
+                phase = Phase.PLANTING;
+                currentIndex = 0;
+                if (chatFeedback.get()) info("开始种植: " + plantTargets.size() + " 个");
+                return;
+            }
+        } else if (phase == Phase.HOEING) {
+            if (!plantTargets.isEmpty()) {
+                phase = Phase.PLANTING;
+                currentIndex = 0;
+                if (chatFeedback.get()) info("开始种植: " + plantTargets.size() + " 个");
+                return;
             }
         }
 
-        if (targets.isEmpty()) {
-            info("No weeds found.");
-            return;
+        phase = Phase.DONE;
+        if (chatFeedback.get()) info("所有操作完成！");
+
+        if (loopMode.get()) {
+            phase = Phase.IDLE;
+            scanTargets();
+            if (chatFeedback.get()) info("循环扫描中...");
+        } else {
+            toggle();
+        }
+    }
+
+    // ==================== 执行操作 ====================
+
+    private boolean performHoe(BlockPos pos) {
+        ItemStack mainHand = mc.player.getMainHandStack();
+        if (!(mainHand.getItem() instanceof HoeItem)) {
+            if (chatFeedback.get()) warning("主手需要锄头！");
+            return false;
         }
 
-        info("Removing " + targets.size() + " weeds...");
+        BlockState state = mc.world.getBlockState(pos);
+        Block block = state.getBlock();
 
-        for (BlockPos pos : targets) {
-            mc.interactionManager.attackBlock(pos, Direction.UP);
+        if (!isHoable(block) || block instanceof FarmlandBlock) {
+            return true;
         }
 
-        info("Removed " + targets.size() + " weeds.");
+        mc.player.swingHand(Hand.MAIN_HAND);
+        Vec3d hitVec = pos.toCenterPos();
+        BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, pos, false);
+        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hitResult);
+        return true;
+    }
+
+    private boolean performPlant(BlockPos plantPos, BlockPos farmlandPos) {
+        ItemStack offHand = mc.player.getOffHandStack();
+        Item targetSeed = getSeedItem(cropType.get());
+
+        if (offHand.isEmpty() || offHand.getItem() != targetSeed) {
+            if (chatFeedback.get()) warning("副手需要对应的种子！");
+            return false;
+        }
+
+        if (!(mc.world.getBlockState(farmlandPos).getBlock() instanceof FarmlandBlock)) {
+            return true;
+        }
+        BlockState aboveState = mc.world.getBlockState(plantPos);
+        if (!aboveState.isAir() && !aboveState.isReplaceable()) {
+            return true;
+        }
+
+        mc.player.swingHand(Hand.OFF_HAND);
+        Vec3d hitVec = new Vec3d(farmlandPos.getX() + 0.5, farmlandPos.getY() + 0.5, farmlandPos.getZ() + 0.5);
+        BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, farmlandPos, false);
+        mc.interactionManager.interactBlock(mc.player, Hand.OFF_HAND, hitResult);
+        return true;
+    }
+
+    private boolean performWeed(BlockPos pos) {
+        BlockState state = mc.world.getBlockState(pos);
+        if (!isWeedBlock(state.getBlock())) {
+            return true;
+        }
+
+        mc.player.swingHand(Hand.MAIN_HAND);
+        mc.interactionManager.attackBlock(pos, Direction.UP);
+        return true;
     }
 
     // ==================== Helper Methods ====================
 
-    private boolean hasHoe() {
-        return InvUtils.findInHotbar(itemStack -> itemStack.getItem() instanceof HoeItem).found();
-    }
-
-    private boolean isSeedItem(Item item, CropType type) {
+    private Item getSeedItem(CropType type) {
         return switch (type) {
-            case Wheat -> item == Items.WHEAT_SEEDS;
-            case Carrot -> item == Items.CARROT;
-            case Potato -> item == Items.POTATO;
-            case Beetroot -> item == Items.BEETROOT_SEEDS;
-            case Melon -> item == Items.MELON_SEEDS;
-            case Pumpkin -> item == Items.PUMPKIN_SEEDS;
-            case NetherWart -> item == Items.NETHER_WART;
+            case Wheat -> Items.WHEAT_SEEDS;
+            case Carrot -> Items.CARROT;
+            case Potato -> Items.POTATO;
+            case Beetroot -> Items.BEETROOT_SEEDS;
+            case Melon -> Items.MELON_SEEDS;
+            case Pumpkin -> Items.PUMPKIN_SEEDS;
+            case NetherWart -> Items.NETHER_WART;
         };
     }
 
     private boolean isHoable(Block block) {
-        return block instanceof GrassBlock
-            || block == Blocks.DIRT
+        return block == Blocks.DIRT
             || block == Blocks.COARSE_DIRT
             || block == Blocks.DIRT_PATH
             || block == Blocks.PODZOL
             || block == Blocks.MYCELIUM
-            || block == Blocks.ROOTED_DIRT;
+            || block == Blocks.ROOTED_DIRT
+            || block == Blocks.GRASS_BLOCK;
     }
 
     private boolean isWeedBlock(Block block) {
-        return block instanceof GrassBlock
-            || block instanceof TallPlantBlock
+        return block instanceof TallPlantBlock
             || block instanceof FlowerBlock
             || block instanceof FernBlock
             || block == Blocks.DEAD_BUSH
+            || block == Blocks.GRASS
+            || block == Blocks.TALL_GRASS
+            || block == Blocks.FERN
+            || block == Blocks.LARGE_FERN
             || block == Blocks.SWEET_BERRY_BUSH
             || block == Blocks.VINE
             || block == Blocks.LILY_PAD
@@ -355,6 +454,13 @@ public class FarmAura extends Module {
 
     @Override
     public String getInfoString() {
-        return "Range: " + range.get();
+        String status = switch (phase) {
+            case IDLE -> "空闲";
+            case WEEDING -> "除杂草 " + (currentIndex + 1) + "/" + weedTargets.size();
+            case HOEING -> "锄地 " + (currentIndex + 1) + "/" + hoeTargets.size();
+            case PLANTING -> "种植 " + (currentIndex + 1) + "/" + plantTargets.size();
+            case DONE -> "完成";
+        };
+        return "范围: " + range.get() + " | " + status;
     }
 }
